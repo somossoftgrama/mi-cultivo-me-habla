@@ -5,7 +5,7 @@ from .config import ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
 ELEVENLABS_BASE = "https://api.elevenlabs.io/v1"
 
 # Voz por defecto: Rachel (multilingual, buena para español e inglés)
-DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
+DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL"
 
 
 async def text_to_speech(text: str, voice_id: str = None) -> bytes:
