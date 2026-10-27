@@ -229,6 +229,26 @@
             }
         }
 
+        async function compressImage(file, maxWidth, quality) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        if (w > maxWidth) { h = (h * maxWidth) / w; w = maxWidth; }
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
         async function sendPhoto() {
             if (!selectedFile) return;
             const btn = document.getElementById('sendBtn');
@@ -236,12 +256,22 @@
             document.getElementById('loading').style.display = 'block';
             document.getElementById('response').style.display = 'none';
 
+            // Compress image on client side to avoid large uploads
+            const compressedFile = await compressImage(selectedFile, 1200, 0.8);
             const formData = new FormData();
-            formData.append('photo', selectedFile);
+            formData.append('photo', compressedFile, selectedFile.name);
 
             try {
                 const res = await fetch('/analyze', { method: 'POST', body: formData });
+                const contentType = res.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    // Server might be waking up (sandbox suspended)
+                    throw new Error('Server is waking up. Please wait a few seconds and try again.');
+                }
                 const data = await res.json();
+                if (!data.response) {
+                    throw new Error('No response received. Please try again.');
+                }
                 document.getElementById('responseText').textContent = data.response;
                 document.getElementById('response').style.display = 'block';
                 if (data.audio_url) {
@@ -258,8 +288,9 @@
                 document.getElementById('historyList').prepend(item);
                 document.getElementById('historySection').style.display = 'block';
             } catch (e) {
-                document.getElementById('responseText').textContent = 'Sorry, something went wrong. Please try again.';
+                document.getElementById('responseText').textContent = 'Error: ' + (e.message || 'Unknown error') + '. Please try a smaller photo or try again.';
                 document.getElementById('response').style.display = 'block';
+                console.error('Analyze error:', e);
             } finally {
                 document.getElementById('loading').style.display = 'none';
                 btn.disabled = false;
