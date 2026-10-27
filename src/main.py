@@ -6,7 +6,9 @@ import os
 from .agent import respond_to_photo
 from .tts_client import text_to_speech
 
+from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI(title="My Crop Speaks to Me", version="0.1.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 photo_history: list = []
