@@ -654,18 +654,22 @@ export default {
                 }
                 const base64Image = btoa(binary);
 
-                // Step 1: SAM 3.1 segmentation (both prompts in parallel — halves latency)
+                // Step 1: SAM 3.1 segmentation (streamed — non-streamed responses come back empty)
+                // Prompt must be ONE common noun ("plant"); compounds like "leaf spot" match nothing.
                 async function countInstances(concept) {
                     try {
                         const samResponse = await fetch("https://api.meta.ai/v1/responses", {
                             method: "POST",
                             headers: {
                                 "Authorization": `Bearer ${META_KEY}`,
-                                "Content-Type": "application/json"
+                                "Content-Type": "application/json",
+                                "Accept": "text/event-stream"
                             },
                             body: JSON.stringify({
                                 model: "sam-3.1",
+                                stream: true,
                                 input: [{
+                                    type: "message",
                                     role: "user",
                                     content: [
                                         { type: "input_text", text: concept },
@@ -678,22 +682,37 @@ export default {
                             console.error(`SAM "${concept}" HTTP ${samResponse.status}`);
                             return 0;
                         }
-                        const samData = await samResponse.json();
-                        let samText = "";
-                        for (const item of (samData.output || [])) {
-                            for (const c of (item.content || [])) {
-                                samText += c.text || "";
+                        const reader = samResponse.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buf = "";
+                        let text = "";
+                        for (;;) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            buf += decoder.decode(value, { stream: true });
+                            let idx;
+                            while ((idx = buf.indexOf("\n")) >= 0) {
+                                const line = buf.slice(0, idx).trim();
+                                buf = buf.slice(idx + 1);
+                                if (!line.startsWith("data:")) continue;
+                                const d = line.slice(5).trim();
+                                if (!d || d === "[DONE]") continue;
+                                try {
+                                    const ev = JSON.parse(d);
+                                    if (ev.type === "response.output_text.delta") text += ev.delta || "";
+                                    else if (ev.type === "response.output_text.done") text += ev.text || "";
+                                } catch (e) {}
                             }
                         }
-                        return (samText.match(/<\|box;/g) || []).length;
+                        return (text.match(/<\|box;/g) || []).length;
                     } catch (e) {
                         console.error(`SAM "${concept}" error:`, e.message);
                         return 0;
                     }
                 }
                 const [leafCount, lesionCount] = await Promise.all([
-                    countInstances("leaf"),
-                    countInstances("lesion")
+                    countInstances("plant"),
+                    countInstances("spot")
                 ]);
 
                 // Step 2: Visual analysis with Muse Spark
@@ -721,7 +740,7 @@ export default {
                 const analysis = analysisData.choices?.[0]?.message?.content || "Sin análisis disponible.";
 
                 // Step 3: Agent response
-                const measText = `SAM 3.1 found ${leafCount} leaf instance(s) and ${lesionCount} lesion(s).`;
+                const measText = `SAM 3.1 contó ${leafCount} instancia(s) de planta y ${lesionCount} mancha(s).`;
                 const agentResponse = await fetch("https://api.meta.ai/v1/chat/completions", {
                     method: "POST",
                     headers: {
@@ -737,7 +756,7 @@ export default {
                             },
                             {
                                 role: "user",
-                                content: `Encontré ${leafCount} hojas y ${lesionCount} manchas. Esto es lo que veo: ${analysis}. Responde como la planta, con las mediciones pero en lenguaje simple, de todos los días.`
+                                content: `SAM contó ${leafCount} partes de planta y ${lesionCount} manchas. Esto es lo que veo: ${analysis}. Responde como la planta, con las mediciones pero en lenguaje simple, de todos los días. Si un conteo es 0, no lo menciones como dato, apóyate en lo que ves.`
                             }
                         ]
                     })
