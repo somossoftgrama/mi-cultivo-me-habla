@@ -1,0 +1,17 @@
+name = "mi-cultivo-me-habla"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+[vars]
+META_API_BASE = "https://api.meta.ai/v1"
+ELEVENLABS_BASE = "https://api.elevenlabs.io/v1"
+
+[durable_objects]
+bindings = [
+  { name = "JOURNAL", class_name = "JournalStore" },
+  { name = "LIMITER", class_name = "RateLimit" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["JournalStore", "RateLimit"]
